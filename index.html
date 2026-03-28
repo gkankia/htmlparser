@@ -356,19 +356,31 @@ async function extractPDFText(url) {
 
 function parseOwnersFromText(text) {
   const owners = [];
-  const lines = text.split(/\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const personalMatch = trimmed.match(/^(.+?)\s*,\s*P\/N:\s*(\d+)/);
-    if (personalMatch) {
-      owners.push({ name: personalMatch[1].trim(), id_number: personalMatch[2].trim(), id_type: "personal" });
-      continue;
-    }
-    const companyMatch = trimmed.match(/^(.+?)\s*,\s*ID\s*ნომერი:\s*(\d+)/);
-    if (companyMatch) {
-      owners.push({ name: companyMatch[1].trim(), id_number: companyMatch[2].trim(), id_type: "company" });
+
+  // Extract everything between მესაკუთრეები: and the next section
+  const section = text.match(/მესაკუთრეები?:(.*?)(?:იპოთეკა|საგადასახადო|ვალდებულება|$)/s);
+  const block = section ? section[1] : text;
+
+  // Match personal: any text followed by ,P/N: number (with variable spaces)
+  const personalRe = /([^,]+?)\s*,\s*P\s*\/\s*N\s*:\s*(\d+)/g;
+  let m;
+  while ((m = personalRe.exec(block)) !== null) {
+    const name = m[1].trim().replace(/\s+/g, " ");
+    if (name.length > 1) {
+      owners.push({ name, id_number: m[2].trim(), id_type: "personal" });
     }
   }
+
+  // Match company/state: any text followed by , ID ნომერი: number
+  const companyRe = /([^,]+?)\s*,\s*ID\s*ნომერი\s*:\s*(\d+)/g;
+  while ((m = companyRe.exec(block)) !== null) {
+    const name = m[1].trim().replace(/\s+/g, " ");
+    if (name.length > 1) {
+      owners.push({ name, id_number: m[2].trim(), id_type: "company" });
+    }
+  }
+
+  // Deduplicate
   const seen = new Set();
   return owners.filter(o => {
     const key = o.id_number || o.name;
