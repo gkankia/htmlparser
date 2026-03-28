@@ -101,6 +101,7 @@
       <div class="stats">HTML: <b id="s-html">0</b> &nbsp;|&nbsp; JSON: <b id="s-shp">0</b> &nbsp;|&nbsp; Matched: <b id="s-matched">0</b></div>
       <button class="btn-export" id="export-csv-btn" onclick="exportCSV()" disabled>⬇ CSV</button>
       <button class="btn-export" style="background:#0ea5e9" id="export-json-btn" onclick="exportGeoJSON()" disabled>⬇ GeoJSON</button>
+      <button class="btn-export" style="background:#f59e0b" onclick="debugPDF()">🔍 Debug PDF</button>
       <button class="btn-export" style="background:#ef4444" onclick="clearAll()">🗑 Clear All</button>
     </div>
   </div>
@@ -710,7 +711,35 @@ async function clearLines() {
   await saveAll(); renderLineQueues(); renderLineTable();
 }
 
-// ── Bulk import ───────────────────────────────────────────────────────────────
+async function debugPDF() {
+  const id = Object.keys(htmlStore)[0];
+  if (!id) return alert("Add an HTML response first.");
+  const url = htmlStore[id]?.registryDocUrl;
+  if (!url) return alert("No registry doc URL found for this parcel.");
+  try {
+    const proxyResp = await fetch("https://spring-recipe-402c.gkankia.workers.dev", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url })
+    });
+    const { base64 } = await proxyResp.json();
+    const lib    = await loadPDFJS();
+    const binary = atob(base64);
+    const bytes  = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const pdf = await lib.getDocument({ data: bytes }).promise;
+    let text = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(item => item.str).join(" ") + "\n";
+    }
+    console.log("%c[PDF RAW TEXT]", "color:#f59e0b;font-weight:bold");
+    console.log(text);
+    alert("PDF text printed to console (F12 → Console). Copy the section with owner names and P/N numbers.");
+  } catch(e) { alert("Error: " + e.message); }
+}
+
+
 function handleDrop(e) {
   e.preventDefault();
   document.getElementById("drop-zone").style.background = "";
