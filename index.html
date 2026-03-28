@@ -2,12 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>NAPR Parcel Merger</title>
+<title>NAPR Data Merger</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: sans-serif; background: #f1f5f9; color: #1e293b; padding: 20px; }
   h1 { font-size: 1.3rem; font-weight: 700; margin-bottom: 4px; }
-  .subtitle { color: #64748b; font-size: 0.85rem; margin-bottom: 20px; }
+  .subtitle { color: #64748b; font-size: 0.85rem; margin-bottom: 12px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; }
+  .tab { padding: 8px 20px; border-radius: 7px 7px 0 0; border: none; cursor: pointer; font-size: 0.9rem; font-weight: 600; background: #e2e8f0; color: #64748b; transition: background 0.15s; }
+  .tab.active { background: #6366f1; color: white; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
   .panel { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
   .panel h2 { font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -56,9 +61,17 @@
 </head>
 <body>
 
-<h1>🗺️ NAPR Parcel Data Merger</h1>
-<p class="subtitle">Paste HTML and JSON responses from the browser Network tab — the tool merges them, fetches ownership PDFs automatically, and exports to GeoJSON/CSV.</p>
+<h1>🗺️ NAPR Data Merger</h1>
+<p class="subtitle">Paste HTML and JSON responses from the browser Network tab — merges, fetches ownership PDFs, and exports to GeoJSON/CSV.</p>
 
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('parcels')">🏠 Parcels</button>
+  <button class="tab" onclick="switchTab('lines')">🔧 Pipe Networks</button>
+  <button class="tab" onclick="switchTab('bulk')">⚡ Bulk Import</button>
+</div>
+
+<!-- ══ PARCELS TAB ══ -->
+<div id="tab-parcels" class="tab-content active">
 <div class="grid">
   <div class="panel">
     <h2>1. HTML Response <span id="html-count">0 queued</span></h2>
@@ -70,7 +83,6 @@
     <div id="html-msg"></div>
     <div class="queue" id="html-queue"></div>
   </div>
-
   <div class="panel">
     <h2>2. JSON Response <span id="shp-count">0 queued</span></h2>
     <textarea id="shp-input" placeholder="Paste the JSON shape response here (polygon coordinates)"></textarea>
@@ -82,28 +94,111 @@
     <div class="queue" id="shp-queue"></div>
   </div>
 </div>
-
 <div class="results">
   <div class="status-bar">
-    <h2>Merged Results</h2>
+    <h2>Parcel Results</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <div class="stats">HTML: <b id="s-html">0</b> &nbsp;|&nbsp; JSON: <b id="s-shp">0</b> &nbsp;|&nbsp; Matched: <b id="s-matched">0</b></div>
-      <button class="btn-export" id="export-csv-btn"  onclick="exportCSV()"     disabled>⬇ CSV</button>
+      <button class="btn-export" id="export-csv-btn" onclick="exportCSV()" disabled>⬇ CSV</button>
       <button class="btn-export" style="background:#0ea5e9" id="export-json-btn" onclick="exportGeoJSON()" disabled>⬇ GeoJSON</button>
       <button class="btn-export" style="background:#ef4444" onclick="clearAll()">🗑 Clear All</button>
     </div>
   </div>
-  <div id="table-wrap"><div class="empty">No data yet — add HTML and JSON responses above.</div></div>
+  <div id="table-wrap"><div class="empty">No data yet.</div></div>
+</div>
+</div>
+
+<!-- ══ BULK IMPORT TAB ══ -->
+<div id="tab-bulk" class="tab-content">
+<div class="panel" style="margin-bottom:16px">
+  <h2>Bulk Import from Interceptor</h2>
+  <p style="font-size:0.82rem;color:#64748b;margin:8px 0 12px">
+    Drop the <b>napr_captured.json</b> file exported from the browser console script, 
+    or paste its contents below. All parcels will be imported into the Parcels or Pipe Networks tab automatically.
+  </p>
+  <div id="drop-zone" style="border:2px dashed #c7d2fe;border-radius:10px;padding:30px;text-align:center;cursor:pointer;margin-bottom:12px;transition:background 0.15s"
+    ondragover="event.preventDefault();this.style.background='#eef2ff'"
+    ondragleave="this.style.background=''"
+    ondrop="handleDrop(event)">
+    <div style="font-size:2rem;margin-bottom:8px">📂</div>
+    <div style="color:#6366f1;font-weight:600">Drop napr_captured.json here</div>
+    <div style="color:#94a3b8;font-size:0.8rem;margin-top:4px">or paste JSON below</div>
+  </div>
+  <textarea id="bulk-input" style="height:140px" placeholder='Paste the contents of napr_captured.json here...'></textarea>
+  <div class="btn-row" style="margin-top:10px">
+    <div style="display:flex;gap:8px;align-items:center">
+      <label style="font-size:0.85rem;color:#475569;font-weight:500">Import as:</label>
+      <select id="bulk-type" style="padding:6px 12px;border-radius:7px;border:1.5px solid #e2e8f0;font-size:0.85rem">
+        <option value="parcels">Parcels (polygon)</option>
+        <option value="lines">Pipe Networks (line)</option>
+      </select>
+    </div>
+    <button class="btn-add" onclick="importBulk()">⚡ Import All</button>
+    <button class="btn-clear" onclick="document.getElementById('bulk-input').value=''">Clear</button>
+  </div>
+  <div id="bulk-msg"></div>
+</div>
+</div>
+<div id="tab-lines" class="tab-content">
+<div class="grid">
+  <div class="panel">
+    <h2>1. HTML Response <span id="line-html-count">0 queued</span></h2>
+    <textarea id="line-html-input" placeholder="Paste the HTML response here"></textarea>
+    <div class="btn-row">
+      <button class="btn-add" onclick="addLineHTML()">+ Add HTML</button>
+      <button class="btn-clear" onclick="document.getElementById('line-html-input').value=''">Clear</button>
+    </div>
+    <div id="line-html-msg"></div>
+    <div class="queue" id="line-html-queue"></div>
+  </div>
+  <div class="panel">
+    <h2>2. JSON Response <span id="line-shp-count">0 queued</span></h2>
+    <textarea id="line-shp-input" placeholder="Paste the JSON shape response here (line coordinates)"></textarea>
+    <div class="btn-row">
+      <button class="btn-add" onclick="addLineSHP()">+ Add JSON</button>
+      <button class="btn-clear" onclick="document.getElementById('line-shp-input').value=''">Clear</button>
+    </div>
+    <div id="line-shp-msg"></div>
+    <div class="queue" id="line-shp-queue"></div>
+  </div>
+</div>
+<div class="results">
+  <div class="status-bar">
+    <h2>Line Results</h2>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div class="stats">HTML: <b id="ls-html">0</b> &nbsp;|&nbsp; JSON: <b id="ls-shp">0</b> &nbsp;|&nbsp; Matched: <b id="ls-matched">0</b></div>
+      <button class="btn-export" id="line-export-csv-btn" onclick="exportLineCSV()" disabled>⬇ CSV</button>
+      <button class="btn-export" style="background:#0ea5e9" id="line-export-json-btn" onclick="exportLineGeoJSON()" disabled>⬇ GeoJSON</button>
+      <button class="btn-export" style="background:#ef4444" onclick="clearLines()">🗑 Clear All</button>
+    </div>
+  </div>
+  <div id="line-table-wrap"><div class="empty">No data yet.</div></div>
+</div>
 </div>
 
 <script>
-const htmlStore  = {};
-const shpStore   = {};
-const ownerStore = {}; // id -> { owners: [{name, id_number, id_type}], fetched: bool, error: str }
+// ── Stores ────────────────────────────────────────────────────────────────────
+const htmlStore     = {};
+const shpStore      = {};
+const ownerStore    = {};
+const lineHtmlStore = {};
+const lineShpStore  = {};
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
+  document.getElementById("tab-" + name).classList.add("active");
+  document.querySelectorAll(".tab").forEach((el, i) => {
+    el.classList.toggle("active",
+      (name === "parcels" && i === 0) ||
+      (name === "lines"   && i === 1) ||
+      (name === "bulk"    && i === 2));
+  });
+}
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 async function saveAll() {
-  const payload = { htmlStore, shpStore, ownerStore };
+  const payload = { htmlStore, shpStore, ownerStore, lineHtmlStore, lineShpStore };
   try {
     if (window.storage) await window.storage.set("napr_data", JSON.stringify(payload));
     else localStorage.setItem("napr_data", JSON.stringify(payload));
@@ -122,7 +217,7 @@ async function loadAll() {
         if (h) Object.assign(htmlStore, JSON.parse(h.value));
         if (s) Object.assign(shpStore,  JSON.parse(s.value));
         if (h || s) await saveAll();
-        renderQueues(); renderTable(); return;
+        refresh(); return;
       }
     } else {
       raw = localStorage.getItem("napr_data");
@@ -132,22 +227,29 @@ async function loadAll() {
         if (h) Object.assign(htmlStore, JSON.parse(h));
         if (s) Object.assign(shpStore,  JSON.parse(s));
         if (h || s) await saveAll();
-        renderQueues(); renderTable(); return;
+        refresh(); return;
       }
     }
     if (raw) {
       const p = JSON.parse(raw);
-      if (p.htmlStore)  Object.assign(htmlStore,  p.htmlStore);
-      if (p.shpStore)   Object.assign(shpStore,   p.shpStore);
-      if (p.ownerStore) Object.assign(ownerStore, p.ownerStore);
+      if (p.htmlStore)     Object.assign(htmlStore,     p.htmlStore);
+      if (p.shpStore)      Object.assign(shpStore,      p.shpStore);
+      if (p.ownerStore)    Object.assign(ownerStore,    p.ownerStore);
+      if (p.lineHtmlStore) Object.assign(lineHtmlStore, p.lineHtmlStore);
+      if (p.lineShpStore)  Object.assign(lineShpStore,  p.lineShpStore);
     }
   } catch(e) { console.warn("Load failed:", e); }
+  refresh();
+}
+
+function refresh() {
   renderQueues(); renderTable();
+  renderLineQueues(); renderLineTable();
 }
 
 loadAll();
 
-// ── Parse HTML ────────────────────────────────────────────────────────────────
+// ── Parse HTML (shared) ───────────────────────────────────────────────────────
 function parseHTML(raw) {
   const doc = new DOMParser().parseFromString(raw, "text/html");
   const container = doc.querySelector("[data-index]");
@@ -167,7 +269,7 @@ function parseHTML(raw) {
   let parcelType = "", address = "", ownershipType = "";
   doc.querySelectorAll(".bg-blue-100.divide-y .p-2").forEach(row => {
     const label = row.querySelector(".text-sm")?.textContent?.trim() || "";
-    const val   = row.querySelector(".text-md")?.textContent?.trim() || "";
+    const val   = row.querySelector(".text-md")?.textContent?.trim()  || "";
     if (label.includes("ნაკვეთის ტიპი")) parcelType   = val;
     if (label.includes("მისამართი"))     address       = val;
     if (label.includes("საკუთრების"))    ownershipType = val;
@@ -183,26 +285,21 @@ function parseHTML(raw) {
     if (coords.includes(",")) [lat, lon] = coords.split(",");
   }
 
-  // ── Parse document sections by label ─────────────────────────────────────
-  // Each expandable label has a span.flex-1 with the section name
-  // and inside its .divide-y, links to documents
   const docSections = { registry: [], drawing: [], cadastral: [] };
-
   doc.querySelectorAll("label.expandable").forEach(label => {
     const sectionName = label.querySelector("span.flex-1")?.textContent?.trim() || "";
-    const links = [...label.querySelectorAll("a[href*='GetBlob']")];
-    links.forEach(a => {
-      const href   = a.getAttribute("href") || "";
-      const textEl = a.querySelector(".font-sans");
+    label.querySelectorAll("a[href*='GetBlob']").forEach(a => {
+      const href    = a.getAttribute("href") || "";
+      const textEl  = a.querySelector(".font-sans");
       if (!textEl) return;
       const stmtId  = [...textEl.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent.trim()).find(t => t.length > 0) || "";
       const dateStr = textEl.querySelector("span.font-light")?.textContent?.trim() || "";
       let iso = "";
       if (dateStr) { const [d,m,y] = dateStr.split("."); iso = `${y}-${m}-${d}`; }
       const entry = { href, stmtId, date: iso };
-      if (sectionName.includes("ამონაწერი"))        docSections.registry.push(entry);
-      else if (sectionName.includes("სიტუაციური"))  docSections.drawing.push(entry);
-      else if (sectionName.includes("საკადასტრო"))  docSections.cadastral.push(entry);
+      if (sectionName.includes("ამონაწერი"))       docSections.registry.push(entry);
+      else if (sectionName.includes("სიტუაციური")) docSections.drawing.push(entry);
+      else if (sectionName.includes("საკადასტრო")) docSections.cadastral.push(entry);
     });
   });
 
@@ -213,13 +310,13 @@ function parseHTML(raw) {
 
   return {
     id, cadastral, status, area, parcelType, address, ownershipType, owners, lat, lon,
-    registryDocId:   reg?.stmtId  || "", registryDocDate: reg?.date || "", registryDocUrl: reg?.href || "",
-    drawingDocId:    draw?.stmtId || "", drawingDocDate:  draw?.date || "", drawingDocUrl:  draw?.href || "",
-    cadastralDocId:  cad?.stmtId  || "", cadastralDocDate:cad?.date || "", cadastralDocUrl:cad?.href || "",
+    registryDocId:   reg?.stmtId  || "", registryDocDate: reg?.date   || "", registryDocUrl:  reg?.href  || "",
+    drawingDocId:    draw?.stmtId || "", drawingDocDate:  draw?.date  || "", drawingDocUrl:   draw?.href || "",
+    cadastralDocId:  cad?.stmtId  || "", cadastralDocDate:cad?.date   || "", cadastralDocUrl: cad?.href  || "",
   };
 }
 
-// ── Parse JSON shape ──────────────────────────────────────────────────────────
+// ── Parse JSON shape (shared) ─────────────────────────────────────────────────
 function parseSHP(raw) {
   const j = JSON.parse(raw);
   const d = j.data?.[0];
@@ -227,85 +324,119 @@ function parseSHP(raw) {
   return { id: String(d.id), name: d.name, proj: d.proj, shape: d.shape };
 }
 
-// ── Fetch PDF + extract owners via Claude API ─────────────────────────────────
+// ── PDF.js owner extraction ───────────────────────────────────────────────────
+const PDFJS_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+let pdfjsLib = null;
+
+async function loadPDFJS() {
+  if (pdfjsLib) return pdfjsLib;
+  await new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = PDFJS_URL; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  pdfjsLib = window["pdfjs-dist/build/pdf"];
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  return pdfjsLib;
+}
+
+async function extractPDFText(url) {
+  const lib = await loadPDFJS();
+  const pdf = await lib.getDocument({ url, withCredentials: false }).promise;
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    fullText += content.items.map(item => item.str).join(" ") + "\n";
+  }
+  return fullText;
+}
+
+function parseOwnersFromText(text) {
+  const owners = [];
+  const lines = text.split(/\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const personalMatch = trimmed.match(/^(.+?)\s*,\s*P\/N:\s*(\d+)/);
+    if (personalMatch) {
+      owners.push({ name: personalMatch[1].trim(), id_number: personalMatch[2].trim(), id_type: "personal" });
+      continue;
+    }
+    const companyMatch = trimmed.match(/^(.+?)\s*,\s*ID\s*ნომერი:\s*(\d+)/);
+    if (companyMatch) {
+      owners.push({ name: companyMatch[1].trim(), id_number: companyMatch[2].trim(), id_type: "company" });
+    }
+  }
+  const seen = new Set();
+  return owners.filter(o => {
+    const key = o.id_number || o.name;
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+}
+
 async function fetchOwners(id) {
   const html = htmlStore[id];
   if (!html?.registryDocUrl) return;
-
   ownerStore[id] = { fetched: false, fetching: true, owners: [], error: "" };
   renderTable();
-
   try {
-    // 1. Fetch the PDF as base64
-    const pdfResp = await fetch(html.registryDocUrl);
-    if (!pdfResp.ok) throw new Error(`PDF fetch failed: ${pdfResp.status}`);
-    const blob   = await pdfResp.blob();
-    const base64 = await new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload  = () => res(r.result.split(",")[1]);
-      r.onerror = () => rej(new Error("FileReader failed"));
-      r.readAsDataURL(blob);
-    });
-
-    // 2. Send to Claude API
-    const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: [
-            {
-              type: "document",
-              source: { type: "base64", media_type: "application/pdf", data: base64 }
-            },
-            {
-              type: "text",
-              text: `This is a Georgian property registry document (ამონაწერი საჯარო რეესტრიდან).
-Extract all owners/rights holders listed. For each person or entity return:
-- name (სახელი/დასახელება)
-- id_number (პ/ნ for individuals, საიდენტიფიკაციო კოდი for companies, empty string if not present)
-- id_type: "personal" for პ/ნ, "company" for საიდენტიფიკაციო კოდი, "other" if neither
-
-Respond ONLY with a valid JSON array, no markdown, no explanation. Example:
-[{"name":"გიორგი მაისაშვილი","id_number":"01234567890","id_type":"personal"},{"name":"შპს მაგალითი","id_number":"123456789","id_type":"company"}]`
-            }
-          ]
-        }]
-      })
-    });
-
-    const data = await apiResp.json();
-    const text = data.content?.find(b => b.type === "text")?.text || "[]";
-    const clean = text.replace(/```json|```/g,"").trim();
-    const owners = JSON.parse(clean);
-
+    const text   = await extractPDFText(html.registryDocUrl);
+    const owners = parseOwnersFromText(text);
     ownerStore[id] = { fetched: true, fetching: false, owners, error: "" };
   } catch(e) {
     ownerStore[id] = { fetched: false, fetching: false, owners: [], error: e.message };
-    console.error("Owner fetch error:", e);
   }
-
   await saveAll();
   renderTable();
 }
 
-// ── Add handlers ──────────────────────────────────────────────────────────────
+// ── WKT helpers (shared) ──────────────────────────────────────────────────────
+function extractRings(str) {
+  const rings = []; let depth = 0, start = -1;
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === '(') { depth++; if (depth === 1) start = i + 1; }
+    else if (str[i] === ')') { depth--; if (depth === 0 && start !== -1) { rings.push(str.slice(start, i)); start = -1; } }
+  }
+  return rings;
+}
+
+function parseCoordPairs(str) {
+  return str.trim().split(",").map(pair => {
+    const parts = pair.trim().replace(/[()]/g,"").trim().split(/\s+/);
+    return [parseFloat(parts[0]), parseFloat(parts[1])];
+  }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
+}
+
+function wktToGeoJSON(wkt) {
+  wkt = wkt.trim();
+  const body = wkt.slice(wkt.indexOf("("));
+  if (wkt.startsWith("MULTIPOLYGON")) {
+    const polys = extractRings(body);
+    return { type: "MultiPolygon", coordinates: polys.map(p => extractRings("("+p+")").map(parseCoordPairs)) };
+  } else if (wkt.startsWith("MULTILINESTRING")) {
+    return { type: "MultiLineString", coordinates: extractRings(body).map(parseCoordPairs) };
+  } else if (wkt.startsWith("LINESTRING")) {
+    const inner = wkt.replace(/^LINESTRING\s*/,"").replace(/^\(|\)$/g,"");
+    return { type: "LineString", coordinates: parseCoordPairs(inner) };
+  } else {
+    return { type: "Polygon", coordinates: extractRings(body).map(parseCoordPairs) };
+  }
+}
+
+// ── PARCELS: add / remove / render ───────────────────────────────────────────
 async function addHTML() {
   const raw = document.getElementById("html-input").value.trim();
   const msg = document.getElementById("html-msg");
   if (!raw) return showMsg(msg, "Paste an HTML response first.", "err");
   try {
-    const data   = parseHTML(raw);
+    const data = parseHTML(raw);
     const isDupe = !!htmlStore[data.id];
     htmlStore[data.id] = data;
     document.getElementById("html-input").value = "";
     await saveAll();
-    showMsg(msg, isDupe
-      ? `⚠ Updated parcel ${data.cadastral} (ID: ${data.id})`
-      : `✓ Added ${data.cadastral} — fetching owners PDF...`, isDupe ? "warn" : "ok");
+    showMsg(msg, isDupe ? `⚠ Updated ${data.cadastral} (ID: ${data.id})` : `✓ Added ${data.cadastral} — fetching owners PDF...`, isDupe ? "warn" : "ok");
     renderQueues(); renderTable();
     if (!isDupe || !ownerStore[data.id]?.fetched) fetchOwners(data.id);
   } catch(e) { showMsg(msg, "✗ " + e.message, "err"); }
@@ -316,37 +447,30 @@ async function addSHP() {
   const msg = document.getElementById("shp-msg");
   if (!raw) return showMsg(msg, "Paste a JSON response first.", "err");
   try {
-    const data   = parseSHP(raw);
+    const data = parseSHP(raw);
     const isDupe = !!shpStore[data.id];
     shpStore[data.id] = data;
     document.getElementById("shp-input").value = "";
     await saveAll();
-    showMsg(msg, isDupe
-      ? `⚠ Updated shape for ${data.name}`
-      : `✓ Added shape for ${data.name}`, isDupe ? "warn" : "ok");
+    showMsg(msg, isDupe ? `⚠ Updated shape for ${data.name}` : `✓ Added shape for ${data.name}`, isDupe ? "warn" : "ok");
     renderQueues(); renderTable();
   } catch(e) { showMsg(msg, "✗ " + e.message, "err"); }
 }
 
-// ── Queue tags ────────────────────────────────────────────────────────────────
 function renderQueues() {
-  const hq = document.getElementById("html-queue");
-  hq.innerHTML = "";
+  const hq = document.getElementById("html-queue"); hq.innerHTML = "";
   Object.keys(htmlStore).forEach(id => {
-    const matched = !!shpStore[id];
-    const tag = document.createElement("div");
-    tag.className = "tag " + (matched ? "matched" : "");
-    tag.innerHTML = `${htmlStore[id].cadastral || id} <span class="x" onclick="removeHTML('${id}')">×</span>`;
-    hq.appendChild(tag);
+    const t = document.createElement("div");
+    t.className = "tag " + (shpStore[id] ? "matched" : "");
+    t.innerHTML = `${htmlStore[id].cadastral||id} <span class="x" onclick="removeHTML('${id}')">×</span>`;
+    hq.appendChild(t);
   });
-  const sq = document.getElementById("shp-queue");
-  sq.innerHTML = "";
+  const sq = document.getElementById("shp-queue"); sq.innerHTML = "";
   Object.keys(shpStore).forEach(id => {
-    const matched = !!htmlStore[id];
-    const tag = document.createElement("div");
-    tag.className = "tag " + (matched ? "matched" : "unmatched");
-    tag.innerHTML = `${shpStore[id].name || id} <span class="x" onclick="removeSHP('${id}')">×</span>`;
-    sq.appendChild(tag);
+    const t = document.createElement("div");
+    t.className = "tag " + (htmlStore[id] ? "matched" : "unmatched");
+    t.innerHTML = `${shpStore[id].name||id} <span class="x" onclick="removeSHP('${id}')">×</span>`;
+    sq.appendChild(t);
   });
   document.getElementById("html-count").textContent = Object.keys(htmlStore).length + " queued";
   document.getElementById("shp-count").textContent  = Object.keys(shpStore).length  + " queued";
@@ -357,30 +481,24 @@ function renderQueues() {
 async function removeHTML(id) { delete htmlStore[id]; delete ownerStore[id]; await saveAll(); renderQueues(); renderTable(); }
 async function removeSHP(id)  { delete shpStore[id];  await saveAll(); renderQueues(); renderTable(); }
 
-// ── Merge ─────────────────────────────────────────────────────────────────────
 function getMerged() {
   const ids = new Set([...Object.keys(htmlStore), ...Object.keys(shpStore)]);
   return [...ids].map(id => ({
-    ...(htmlStore[id]  || {}),
-    ...(shpStore[id]   || {}),
-    id,
+    ...(htmlStore[id]||{}), ...(shpStore[id]||{}), id,
     _owners:   ownerStore[id]?.owners   || [],
     _fetching: ownerStore[id]?.fetching || false,
     _ownerErr: ownerStore[id]?.error    || "",
-    _hasHTML:  !!htmlStore[id],
-    _hasSHP:   !!shpStore[id],
+    _hasHTML: !!htmlStore[id], _hasSHP: !!shpStore[id],
   }));
 }
 
-// ── Render table ──────────────────────────────────────────────────────────────
 function renderTable() {
-  const merged = getMerged();
+  const merged  = getMerged();
   const matched = merged.filter(r => r._hasHTML && r._hasSHP).length;
   document.getElementById("s-matched").textContent = matched;
   const ok = matched > 0;
   document.getElementById("export-csv-btn").disabled  = !ok;
   document.getElementById("export-json-btn").disabled = !ok;
-
   const wrap = document.getElementById("table-wrap");
   if (!merged.length) { wrap.innerHTML = '<div class="empty">No data yet.</div>'; return; }
 
@@ -391,94 +509,51 @@ function renderTable() {
   </tr></thead><tbody>`;
 
   merged.forEach(r => {
-    const srcBadge = r._hasHTML && r._hasSHP
-      ? '<span class="badge badge-full">✓ Full</span>'
+    const srcBadge = r._hasHTML && r._hasSHP ? '<span class="badge badge-full">✓ Full</span>'
       : r._hasHTML ? '<span class="badge badge-html">HTML only</span>'
                    : '<span class="badge badge-shp">JSON only</span>';
-
     let ownerBadge = "";
-    if (r._fetching) ownerBadge = `<span class="badge badge-fetching"><span class="spinner"></span>Fetching...</span>`;
-    else if (r._ownerErr) ownerBadge = `<span class="badge" style="background:#fee2e2;color:#991b1b" title="${r._ownerErr}">✗ Error</span>`;
+    if (r._fetching)       ownerBadge = `<span class="badge badge-fetching"><span class="spinner"></span>Fetching...</span>`;
+    else if (r._ownerErr)  ownerBadge = `<span class="badge" style="background:#fee2e2;color:#991b1b" title="${r._ownerErr}">✗ Error</span>`;
     else if (r._owners.length) ownerBadge = `<span class="badge badge-owners">✓ ${r._owners.length} owner(s)</span>`;
     else if (r._hasHTML && !r.registryDocUrl) ownerBadge = `<span class="badge" style="background:#f1f5f9;color:#64748b">No registry doc</span>`;
-
-    const ownerSummary = r._owners.map(o => `${o.name} (${o.id_number || "—"})`).join("<br>");
+    const ownerSummary = r._owners.map(o => `${o.name} (${o.id_number||"—"})`).join("<br>");
     const regLink  = r.registryDocUrl  ? `<a href="${r.registryDocUrl}"  target="_blank" style="color:#6366f1">${r.registryDocDate}</a>`  : "—";
     const drawLink = r.drawingDocUrl   ? `<a href="${r.drawingDocUrl}"   target="_blank" style="color:#6366f1">${r.drawingDocDate}</a>`   : "—";
     const cadLink  = r.cadastralDocUrl ? `<a href="${r.cadastralDocUrl}" target="_blank" style="color:#6366f1">${r.cadastralDocDate}</a>` : "—";
-    const shapeVal = r.shape ? "✓ " + r.shape.substring(0,25) + "…" : "—";
-
     html += `<tr>
-      <td>${srcBadge}</td>
-      <td>${r.id||""}</td>
-      <td>${r.cadastral||r.name||""}</td>
-      <td>${r.status||""}</td>
-      <td>${r.area||""}</td>
+      <td>${srcBadge}</td><td>${r.id||""}</td><td>${r.cadastral||r.name||""}</td>
+      <td>${r.status||""}</td><td>${r.area||""}</td>
       <td title="${r.address||""}">${r.address||""}</td>
       <td>${r.owners||""}</td>
       <td>${ownerBadge}${ownerSummary ? `<div style="margin-top:4px;font-size:0.72rem">${ownerSummary}</div>` : ""}</td>
-      <td>${regLink}</td>
-      <td>${drawLink}</td>
-      <td>${cadLink}</td>
-      <td title="${r.shape||""}">${shapeVal}</td>
+      <td>${regLink}</td><td>${drawLink}</td><td>${cadLink}</td>
+      <td title="${r.shape||""}">${r.shape ? "✓ "+r.shape.substring(0,25)+"…" : "—"}</td>
     </tr>`;
   });
-
-  html += "</tbody></table></div>";
-  wrap.innerHTML = html;
+  wrap.innerHTML = html + "</tbody></table></div>";
 }
 
-// ── WKT → GeoJSON ─────────────────────────────────────────────────────────────
-function wktToGeoJSON(wkt) {
-  wkt = wkt.trim();
-  function extractRings(str) {
-    const rings = []; let depth = 0, start = -1;
-    for (let i = 0; i < str.length; i++) {
-      if (str[i] === '(') { depth++; if (depth === 1) start = i + 1; }
-      else if (str[i] === ')') { depth--; if (depth === 0 && start !== -1) { rings.push(str.slice(start, i)); start = -1; } }
-    }
-    return rings;
-  }
-  function parseCoordPairs(str) {
-    return str.trim().split(",").map(pair => {
-      const parts = pair.trim().replace(/[()]/g,"").trim().split(/\s+/);
-      return [parseFloat(parts[0]), parseFloat(parts[1])];
-    }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
-  }
-  if (wkt.startsWith("MULTIPOLYGON")) {
-    const polys = extractRings(wkt.slice(wkt.indexOf("(")));
-    return { type: "MultiPolygon", coordinates: polys.map(p => extractRings("("+p+")").map(parseCoordPairs)) };
-  } else {
-    return { type: "Polygon", coordinates: extractRings(wkt.slice(wkt.indexOf("("))).map(parseCoordPairs) };
-  }
-}
-
-// ── Exports ───────────────────────────────────────────────────────────────────
 function buildOwnerCols(owners) {
-  // Returns flat object: owner_1, pn_1, owner_2, pn_2 ...
   const out = {};
   owners.forEach((o, i) => {
-    out[`owner_${i+1}`]    = o.name        || "";
-    out[`owner_${i+1}_id`] = o.id_number   || "";
-    out[`owner_${i+1}_id_type`] = o.id_type || "";
+    out[`owner_${i+1}`]          = o.name       || "";
+    out[`owner_${i+1}_id`]       = o.id_number  || "";
+    out[`owner_${i+1}_id_type`]  = o.id_type    || "";
   });
   return out;
 }
 
 function exportCSV() {
   const rows = getMerged().filter(r => r._hasHTML && r._hasSHP);
-  // Find max owner count
   const maxOwners = Math.max(0, ...rows.map(r => r._owners.length));
-  const baseCols = ["id","cadastral","status","area","parcelType","address","ownershipType",
+  const base = ["id","cadastral","status","area","parcelType","address","ownershipType",
     "registryDocDate","registryDocUrl","drawingDocDate","drawingDocUrl","cadastralDocDate","cadastralDocUrl","proj","shape"];
   const ownerCols = [];
-  for (let i = 1; i <= maxOwners; i++) ownerCols.push(`owner_${i}`, `owner_${i}_id`, `owner_${i}_id_type`);
-  const allCols = [...baseCols, ...ownerCols];
-  const esc = v => `"${(v||"").toString().replace(/"/g,'""')}"`;
-  const csv = [allCols.join(","), ...rows.map(r => {
-    const oc = buildOwnerCols(r._owners);
-    return allCols.map(c => esc(r[c] !== undefined ? r[c] : oc[c])).join(",");
-  })].join("\n");
+  for (let i = 1; i <= maxOwners; i++) ownerCols.push(`owner_${i}`,`owner_${i}_id`,`owner_${i}_id_type`);
+  const cols = [...base, ...ownerCols];
+  const esc  = v => `"${(v||"").toString().replace(/"/g,'""')}"`;
+  const csv  = [cols.join(","), ...rows.map(r => { const oc = buildOwnerCols(r._owners); return cols.map(c => esc(r[c]!==undefined?r[c]:oc[c])).join(","); })].join("\n");
   download("napr_parcels.csv", "text/csv", csv);
 }
 
@@ -487,32 +562,187 @@ function exportGeoJSON() {
   const features = rows.map(r => {
     let geometry = null;
     try { geometry = wktToGeoJSON(r.shape); } catch(e) { console.warn(e); }
-    const ownerProps = buildOwnerCols(r._owners);
-    return {
-      type: "Feature",
-      properties: {
-        id: r.id, cadastral: r.cadastral, status: r.status, area_m2: r.area,
-        parcel_type: r.parcelType, address: r.address, ownership_type: r.ownershipType,
-        registry_doc_date: r.registryDocDate, registry_doc_url: r.registryDocUrl,
-        drawing_doc_date:  r.drawingDocDate,  drawing_doc_url:  r.drawingDocUrl,
-        cadastral_doc_date: r.cadastralDocDate, cadastral_doc_url: r.cadastralDocUrl,
-        ...ownerProps
-      },
-      geometry
-    };
+    return { type:"Feature", properties: { id:r.id, cadastral:r.cadastral, status:r.status, area_m2:r.area,
+      parcel_type:r.parcelType, address:r.address, ownership_type:r.ownershipType,
+      registry_doc_date:r.registryDocDate, registry_doc_url:r.registryDocUrl,
+      drawing_doc_date:r.drawingDocDate, drawing_doc_url:r.drawingDocUrl,
+      cadastral_doc_date:r.cadastralDocDate, cadastral_doc_url:r.cadastralDocUrl,
+      ...buildOwnerCols(r._owners) }, geometry };
   });
-  download("napr_parcels.geojson", "application/json", JSON.stringify({ type:"FeatureCollection", features }, null, 2));
+  download("napr_parcels.geojson","application/json",JSON.stringify({type:"FeatureCollection",features},null,2));
 }
 
 async function clearAll() {
-  if (!confirm("Clear all stored parcels? This cannot be undone.")) return;
+  if (!confirm("Clear all parcel data?")) return;
   [htmlStore, shpStore, ownerStore].forEach(s => Object.keys(s).forEach(k => delete s[k]));
   await saveAll(); renderQueues(); renderTable();
 }
 
+// ── LINES: add / remove / render ─────────────────────────────────────────────
+async function addLineHTML() {
+  const raw = document.getElementById("line-html-input").value.trim();
+  const msg = document.getElementById("line-html-msg");
+  if (!raw) return showMsg(msg, "Paste an HTML response first.", "err");
+  try {
+    const data = parseHTML(raw);
+    const isDupe = !!lineHtmlStore[data.id];
+    lineHtmlStore[data.id] = data;
+    document.getElementById("line-html-input").value = "";
+    await saveAll();
+    showMsg(msg, isDupe ? `⚠ Updated ${data.cadastral} (ID: ${data.id})` : `✓ Added ${data.cadastral} (ID: ${data.id})`, isDupe ? "warn" : "ok");
+    renderLineQueues(); renderLineTable();
+  } catch(e) { showMsg(msg, "✗ " + e.message, "err"); }
+}
+
+async function addLineSHP() {
+  const raw = document.getElementById("line-shp-input").value.trim();
+  const msg = document.getElementById("line-shp-msg");
+  if (!raw) return showMsg(msg, "Paste a JSON response first.", "err");
+  try {
+    const data = parseSHP(raw);
+    const isDupe = !!lineShpStore[data.id];
+    lineShpStore[data.id] = data;
+    document.getElementById("line-shp-input").value = "";
+    await saveAll();
+    showMsg(msg, isDupe ? `⚠ Updated shape for ${data.name}` : `✓ Added shape for ${data.name}`, isDupe ? "warn" : "ok");
+    renderLineQueues(); renderLineTable();
+  } catch(e) { showMsg(msg, "✗ " + e.message, "err"); }
+}
+
+function renderLineQueues() {
+  const hq = document.getElementById("line-html-queue"); hq.innerHTML = "";
+  Object.keys(lineHtmlStore).forEach(id => {
+    const t = document.createElement("div");
+    t.className = "tag " + (lineShpStore[id] ? "matched" : "");
+    t.innerHTML = `${lineHtmlStore[id].cadastral||id} <span class="x" onclick="removeLineHTML('${id}')">×</span>`;
+    hq.appendChild(t);
+  });
+  const sq = document.getElementById("line-shp-queue"); sq.innerHTML = "";
+  Object.keys(lineShpStore).forEach(id => {
+    const t = document.createElement("div");
+    t.className = "tag " + (lineHtmlStore[id] ? "matched" : "unmatched");
+    t.innerHTML = `${lineShpStore[id].name||id} <span class="x" onclick="removeLineSHP('${id}')">×</span>`;
+    sq.appendChild(t);
+  });
+  document.getElementById("line-html-count").textContent = Object.keys(lineHtmlStore).length + " queued";
+  document.getElementById("line-shp-count").textContent  = Object.keys(lineShpStore).length  + " queued";
+  document.getElementById("ls-html").textContent = Object.keys(lineHtmlStore).length;
+  document.getElementById("ls-shp").textContent  = Object.keys(lineShpStore).length;
+}
+
+async function removeLineHTML(id) { delete lineHtmlStore[id]; await saveAll(); renderLineQueues(); renderLineTable(); }
+async function removeLineSHP(id)  { delete lineShpStore[id];  await saveAll(); renderLineQueues(); renderLineTable(); }
+
+function getLineMerged() {
+  const ids = new Set([...Object.keys(lineHtmlStore), ...Object.keys(lineShpStore)]);
+  return [...ids].map(id => ({
+    ...(lineHtmlStore[id]||{}), ...(lineShpStore[id]||{}), id,
+    _hasHTML: !!lineHtmlStore[id], _hasSHP: !!lineShpStore[id],
+  }));
+}
+
+function renderLineTable() {
+  const merged  = getLineMerged();
+  const matched = merged.filter(r => r._hasHTML && r._hasSHP).length;
+  document.getElementById("ls-matched").textContent = matched;
+  const ok = matched > 0;
+  document.getElementById("line-export-csv-btn").disabled  = !ok;
+  document.getElementById("line-export-json-btn").disabled = !ok;
+  const wrap = document.getElementById("line-table-wrap");
+  if (!merged.length) { wrap.innerHTML = '<div class="empty">No data yet.</div>'; return; }
+  let html = `<div style="overflow-x:auto"><table><thead><tr>
+    <th>Source</th><th>ID</th><th>Name</th><th>Address</th><th>Shape</th>
+  </tr></thead><tbody>`;
+  merged.forEach(r => {
+    const badge = r._hasHTML && r._hasSHP ? '<span class="badge badge-full">✓ Full</span>'
+      : r._hasHTML ? '<span class="badge badge-html">HTML only</span>'
+                   : '<span class="badge badge-shp">JSON only</span>';
+    html += `<tr><td>${badge}</td><td>${r.id||""}</td><td>${r.cadastral||r.name||""}</td>
+      <td title="${r.address||""}">${r.address||""}</td>
+      <td title="${r.shape||""}">${r.shape?"✓ "+r.shape.substring(0,30)+"…":"—"}</td></tr>`;
+  });
+  wrap.innerHTML = html + "</tbody></table></div>";
+}
+
+function exportLineCSV() {
+  const rows = getLineMerged().filter(r => r._hasHTML && r._hasSHP);
+  const cols = ["id","cadastral","status","area","parcelType","address","ownershipType","proj","shape"];
+  const esc  = v => `"${(v||"").toString().replace(/"/g,'""')}"`;
+  download("napr_lines.csv","text/csv",[cols.join(","),...rows.map(r=>cols.map(c=>esc(r[c])).join(","))].join("\n"));
+}
+
+function exportLineGeoJSON() {
+  const rows = getLineMerged().filter(r => r._hasHTML && r._hasSHP && r.shape);
+  const features = rows.map(r => {
+    let geometry = null;
+    try { geometry = wktToGeoJSON(r.shape); } catch(e) { console.warn(e); }
+    return { type:"Feature", properties:{ id:r.id, name:r.cadastral, address:r.address,
+      status:r.status, parcel_type:r.parcelType }, geometry };
+  });
+  download("napr_lines.geojson","application/json",JSON.stringify({type:"FeatureCollection",features},null,2));
+}
+
+async function clearLines() {
+  if (!confirm("Clear all line data?")) return;
+  [lineHtmlStore, lineShpStore].forEach(s => Object.keys(s).forEach(k => delete s[k]));
+  await saveAll(); renderLineQueues(); renderLineTable();
+}
+
+// ── Bulk import ───────────────────────────────────────────────────────────────
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById("drop-zone").style.background = "";
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById("bulk-input").value = ev.target.result;
+    importBulk();
+  };
+  reader.readAsText(file);
+}
+
+async function importBulk() {
+  const raw  = document.getElementById("bulk-input").value.trim();
+  const msg  = document.getElementById("bulk-msg");
+  const type = document.getElementById("bulk-type").value;
+  if (!raw) return showMsg(msg, "Paste or drop a JSON file first.", "err");
+
+  let items;
+  try { items = JSON.parse(raw); } catch(e) { return showMsg(msg, "✗ Invalid JSON: " + e.message, "err"); }
+  if (!Array.isArray(items)) return showMsg(msg, "✗ Expected a JSON array.", "err");
+
+  let ok = 0, skipped = 0;
+  const hStore = type === "lines" ? lineHtmlStore : htmlStore;
+  const sStore = type === "lines" ? lineShpStore  : shpStore;
+
+  for (const item of items) {
+    try {
+      if (item.html) {
+        const data = parseHTML(item.html);
+        hStore[data.id] = data;
+        // auto-fetch owners for parcels
+        if (type === "parcels" && !ownerStore[data.id]?.fetched) fetchOwners(data.id);
+      }
+      if (item.shp) {
+        const data = parseSHP(JSON.stringify(item.shp));
+        sStore[data.id] = data;
+      }
+      ok++;
+    } catch(e) { skipped++; }
+  }
+
+  await saveAll();
+  renderQueues(); renderTable();
+  renderLineQueues(); renderLineTable();
+  showMsg(msg, `✓ Imported ${ok} parcels${skipped ? ` (${skipped} skipped due to errors)` : ""}. Check the ${type === "lines" ? "Pipe Networks" : "Parcels"} tab.`, "ok");
+  document.getElementById("bulk-input").value = "";
+}
+
+
 function download(filename, mime, content) {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([content], { type: mime }));
+  a.href = URL.createObjectURL(new Blob([content],{type:mime}));
   a.download = filename; a.click();
 }
 
