@@ -382,8 +382,30 @@ async function fetchOwners(id) {
   ownerStore[id] = { fetched: false, fetching: true, owners: [], error: "" };
   renderTable();
   try {
-    const text   = await extractPDFText(html.registryDocUrl);
-    const owners = parseOwnersFromText(text);
+    const PROXY = "https://spring-recipe-402c.gkankia.workers.dev";
+    const proxyResp = await fetch(PROXY, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: html.registryDocUrl })
+    });
+    if (!proxyResp.ok) throw new Error(`Proxy error: ${proxyResp.status}`);
+    const { base64 } = await proxyResp.json();
+
+    // Decode base64 → Uint8Array for PDF.js
+    const lib = await loadPDFJS();
+    const binary = atob(base64);
+    const bytes  = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+    const pdf = await lib.getDocument({ data: bytes }).promise;
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page    = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      fullText += content.items.map(item => item.str).join(" ") + "\n";
+    }
+
+    const owners = parseOwnersFromText(fullText);
     ownerStore[id] = { fetched: true, fetching: false, owners, error: "" };
   } catch(e) {
     ownerStore[id] = { fetched: false, fetching: false, owners: [], error: e.message };
