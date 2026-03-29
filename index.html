@@ -317,7 +317,43 @@ function parseHTML(raw) {
   };
 }
 
-// ── Parse JSON shape (shared) ─────────────────────────────────────────────────
+// ── Parse Line HTML (different structure from parcels) ────────────────────────
+function parseLineHTML(raw) {
+  const doc = new DOMParser().parseFromString(raw, "text/html");
+  const container = doc.querySelector("[data-index]");
+  if (!container) throw new Error("Could not find data-index in HTML");
+  const id = container.getAttribute("data-index");
+
+  const titleEl = doc.querySelector(".title_el");
+  let cadastral = "", status = "";
+  if (titleEl) {
+    cadastral = titleEl.childNodes[0]?.textContent?.trim() || "";
+    status    = titleEl.querySelector("span")?.textContent?.trim() || "";
+  }
+
+  // Length from second .text-lg
+  const bigTexts = [...doc.querySelectorAll(".bg-blue-100 .text-lg, .border.rounded-lg .text-lg")];
+  const length = bigTexts[1] ? bigTexts[1].textContent.replace(/მ\./g,"").trim() : "";
+
+  // Detail rows
+  let objectType = "", description = "", coverageZone = "", ownershipType = "", additionalInfo = "", prevCode = "";
+  doc.querySelectorAll(".bg-blue-100.divide-y .p-2, .border.rounded-lg.divide-y .p-2").forEach(row => {
+    const label = row.querySelector(".text-sm, .text-blue-400")?.textContent?.trim() || "";
+    const val   = row.querySelector(".text-md")?.textContent?.trim() || "";
+    if (label.includes("ობიექტის ტიპი"))           objectType    = val;
+    if (label.includes("ობიექტის აღწერა"))          description   = val;
+    if (label.includes("დაფარვის ზონა"))            coverageZone  = val;
+    if (label.includes("საკუთრების ტიპი"))          ownershipType = val;
+    if (label.includes("დამატებითი მახასიათებლები")) additionalInfo = val;
+    if (label.includes("წინა საკადასტრო კოდი"))     prevCode      = val;
+  });
+
+  // Owners
+  const owners = [...doc.querySelectorAll(".divide-y.text-gray-800 p")]
+    .map(p => p.textContent.trim()).filter(Boolean).join("; ");
+
+  return { id, cadastral, status, length, objectType, description, coverageZone, ownershipType, additionalInfo, prevCode, owners };
+}
 function parseSHP(raw) {
   const j = JSON.parse(raw);
   const d = j.data?.[0];
@@ -435,36 +471,62 @@ async function fetchOwners(id) {
   renderTable();
 }
 
-// ── WKT helpers (shared) ──────────────────────────────────────────────────────
-function extractRings(str) {
-  const rings = []; let depth = 0, start = -1;
-  for (let i = 0; i < str.length; i++) {
-    if (str[i] === '(') { depth++; if (depth === 1) start = i + 1; }
-    else if (str[i] === ')') { depth--; if (depth === 0 && start !== -1) { rings.push(str.slice(start, i)); start = -1; } }
-  }
-  return rings;
-}
-
-function parseCoordPairs(str) {
-  return str.trim().split(",").map(pair => {
-    const parts = pair.trim().replace(/[()]/g,"").trim().split(/\s+/);
-    return [parseFloat(parts[0]), parseFloat(parts[1])];
-  }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
-}
-
 function wktToGeoJSON(wkt) {
   wkt = wkt.trim();
-  const body = wkt.slice(wkt.indexOf("("));
-  if (wkt.startsWith("MULTIPOLYGON")) {
-    const polys = extractRings(body);
-    return { type: "MultiPolygon", coordinates: polys.map(p => extractRings("("+p+")").map(parseCoordPairs)) };
-  } else if (wkt.startsWith("MULTILINESTRING")) {
-    return { type: "MultiLineString", coordinates: extractRings(body).map(parseCoordPairs) };
+
+  function parseRing(str) {
+    // str is the content inside one pair of parens, e.g. "44.77 41.68, 44.78 41.69"
+    return str.trim().split(",").map(pair => {
+      const parts = pair.trim().split(/\s+/);
+      return [parseFloat(parts[0]), parseFloat(parts[1])];
+    }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
+  }
+
+  function extractGroups(str) {
+    // Extract content of each top-level (...) group
+    const groups = [];
+    let depth = 0, start = -1;
+    for (let i = 0; i < str.length; i++) {
+      if (str[i] === '(') {
+        depth++;
+        if (depth === 1) start = i + 1;
+      } else if (str[i] === ')') {
+        depth--;
+        if (depth === 0 && start !== -1) {
+          groups.push(str.slice(start, i));
+          start = -1;
+        }
+      }
+    }
+    return groups;
+  }
+
+  function hasNestedParens(str) {
+    return str.includes('(');
+  }
+
+  if (wkt.startsWith("MULTILINESTRING")) {
+    // Each top-level group is one line segment
+    const body = wkt.slice(wkt.indexOf("("));
+    const segments = extractGroups(body);
+    const coordinates = segments.map(seg => {
+      // Each segment may or may not have its own parens
+      return hasNestedParens(seg)
+        ? extractGroups(seg).map(parseRing)
+        : [parseRing(seg)];
+    }).flat();
+    return { type: "MultiLineString", coordinates };
   } else if (wkt.startsWith("LINESTRING")) {
     const inner = wkt.replace(/^LINESTRING\s*/,"").replace(/^\(|\)$/g,"");
-    return { type: "LineString", coordinates: parseCoordPairs(inner) };
+    return { type: "LineString", coordinates: parseRing(inner) };
+  } else if (wkt.startsWith("MULTIPOLYGON")) {
+    const body = wkt.slice(wkt.indexOf("("));
+    const polys = extractGroups(body);
+    return { type: "MultiPolygon", coordinates: polys.map(p => extractGroups(p).map(parseRing)) };
   } else {
-    return { type: "Polygon", coordinates: extractRings(body).map(parseCoordPairs) };
+    // POLYGON
+    const body = wkt.slice(wkt.indexOf("("));
+    return { type: "Polygon", coordinates: extractGroups(body).map(parseRing) };
   }
 }
 
@@ -643,7 +705,7 @@ async function addLineHTML() {
   const msg = document.getElementById("line-html-msg");
   if (!raw) return showMsg(msg, "Paste an HTML response first.", "err");
   try {
-    const data = parseHTML(raw);
+    const data = parseLineHTML(raw);
     const isDupe = !!lineHtmlStore[data.id];
     lineHtmlStore[data.id] = data;
     document.getElementById("line-html-input").value = "";
@@ -710,14 +772,18 @@ function renderLineTable() {
   const wrap = document.getElementById("line-table-wrap");
   if (!merged.length) { wrap.innerHTML = '<div class="empty">No data yet.</div>'; return; }
   let html = `<div style="overflow-x:auto"><table><thead><tr>
-    <th>Source</th><th>ID</th><th>Name</th><th>Address</th><th>Shape</th>
+    <th>Source</th><th>ID</th><th>Cadastral</th><th>Type</th><th>Description</th><th>Length (m)</th><th>Coverage Zone</th><th>Owners</th><th>Shape</th>
   </tr></thead><tbody>`;
   merged.forEach(r => {
     const badge = r._hasHTML && r._hasSHP ? '<span class="badge badge-full">✓ Full</span>'
       : r._hasHTML ? '<span class="badge badge-html">HTML only</span>'
                    : '<span class="badge badge-shp">JSON only</span>';
     html += `<tr><td>${badge}</td><td>${r.id||""}</td><td>${r.cadastral||r.name||""}</td>
-      <td title="${r.address||""}">${r.address||""}</td>
+      <td>${r.objectType||""}</td>
+      <td title="${r.description||""}">${r.description||""}</td>
+      <td>${r.length||""}</td>
+      <td title="${r.coverageZone||""}">${r.coverageZone||""}</td>
+      <td title="${r.owners||""}">${r.owners||""}</td>
       <td title="${r.shape||""}">${r.shape?"✓ "+r.shape.substring(0,30)+"…":"—"}</td></tr>`;
   });
   wrap.innerHTML = html + "</tbody></table></div>";
@@ -725,7 +791,7 @@ function renderLineTable() {
 
 function exportLineCSV() {
   const rows = getLineMerged().filter(r => r._hasHTML && r._hasSHP);
-  const cols = ["id","cadastral","status","area","parcelType","address","ownershipType","proj","shape"];
+  const cols = ["id","cadastral","status","length","objectType","description","coverageZone","ownershipType","additionalInfo","prevCode","owners","proj","shape"];
   const esc  = v => `"${(v||"").toString().replace(/"/g,'""')}"`;
   download("napr_lines.csv","text/csv",[cols.join(","),...rows.map(r=>cols.map(c=>esc(r[c])).join(","))].join("\n"));
 }
@@ -735,8 +801,12 @@ function exportLineGeoJSON() {
   const features = rows.map(r => {
     let geometry = null;
     try { geometry = wktToGeoJSON(r.shape); } catch(e) { console.warn(e); }
-    return { type:"Feature", properties:{ id:r.id, name:r.cadastral, address:r.address,
-      status:r.status, parcel_type:r.parcelType }, geometry };
+    return { type:"Feature", properties:{
+      id: r.id, cadastral: r.cadastral, status: r.status,
+      length_m: r.length, object_type: r.objectType, description: r.description,
+      coverage_zone: r.coverageZone, ownership_type: r.ownershipType,
+      additional_info: r.additionalInfo, prev_code: r.prevCode, owners: r.owners
+    }, geometry };
   });
   download("napr_lines.geojson","application/json",JSON.stringify({type:"FeatureCollection",features},null,2));
 }
@@ -806,10 +876,16 @@ async function importBulk() {
   for (const item of items) {
     try {
       if (item.html) {
-        const data = parseHTML(item.html);
-        hStore[data.id] = data;
-        // auto-fetch owners for parcels
-        if (type === "parcels" && !ownerStore[data.id]?.fetched) fetchOwners(data.id);
+        // Auto-detect line vs parcel by checking HTML content
+        const isLine = item.html.includes("გრძივი ზომა") || item.html.includes("ობიექტის ტიპი");
+        if (type === "lines" || isLine) {
+          const data = parseLineHTML(item.html);
+          lineHtmlStore[data.id] = data;
+        } else {
+          const data = parseHTML(item.html);
+          hStore[data.id] = data;
+          if (type === "parcels" && !ownerStore[data.id]?.fetched) fetchOwners(data.id);
+        }
       }
       if (item.shp) {
         const data = parseSHP(JSON.stringify(item.shp));
