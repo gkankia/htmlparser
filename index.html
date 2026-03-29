@@ -361,7 +361,28 @@ function parseSHP(raw) {
   return { id: String(d.id), name: d.name, proj: d.proj, shape: d.shape };
 }
 
-// ── PDF.js owner extraction ───────────────────────────────────────────────────
+// ── PDF fetch queue ───────────────────────────────────────────────────────────
+const pdfQueue = [];
+let pdfProcessing = false;
+
+function enqueuePDFFetch(id) {
+  if (ownerStore[id]?.fetched) return;
+  if (pdfQueue.includes(id)) return;
+  pdfQueue.push(id);
+  processPDFQueue();
+}
+
+async function processPDFQueue() {
+  if (pdfProcessing || pdfQueue.length === 0) return;
+  pdfProcessing = true;
+  while (pdfQueue.length > 0) {
+    const id = pdfQueue.shift();
+    if (!ownerStore[id]?.fetched) await fetchOwners(id);
+    // small delay between requests to avoid hammering the server
+    await new Promise(r => setTimeout(r, 300));
+  }
+  pdfProcessing = false;
+}
 const PDFJS_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
 let pdfjsLib = null;
 
@@ -543,7 +564,7 @@ async function addHTML() {
     await saveAll();
     showMsg(msg, isDupe ? `⚠ Updated ${data.cadastral} (ID: ${data.id})` : `✓ Added ${data.cadastral} — fetching owners PDF...`, isDupe ? "warn" : "ok");
     renderQueues(); renderTable();
-    if (!isDupe || !ownerStore[data.id]?.fetched) fetchOwners(data.id);
+    if (!isDupe || !ownerStore[data.id]?.fetched) enqueuePDFFetch(data.id);
   } catch(e) { showMsg(msg, "✗ " + e.message, "err"); }
 }
 
@@ -884,7 +905,7 @@ async function importBulk() {
         } else {
           const data = parseHTML(item.html);
           hStore[data.id] = data;
-          if (type === "parcels" && !ownerStore[data.id]?.fetched) fetchOwners(data.id);
+          if (type === "parcels" && !ownerStore[data.id]?.fetched) enqueuePDFFetch(data.id);
         }
       }
       if (item.shp) {
