@@ -114,8 +114,8 @@
 <div class="panel" style="margin-bottom:16px">
   <h2>Bulk Import from Interceptor</h2>
   <p style="font-size:0.82rem;color:#64748b;margin:8px 0 12px">
-    Drop the <b>napr_captured.json</b> file exported from the browser console script, 
-    or paste its contents below. All parcels will be imported into the Parcels or Pipe Networks tab automatically.
+    Drop the <b>napr_captured.json</b> file exported from the browser console script,
+    or paste its contents below. Processed in batches of 100 to avoid crashes.
   </p>
   <div id="drop-zone" style="border:2px dashed #c7d2fe;border-radius:10px;padding:30px;text-align:center;cursor:pointer;margin-bottom:12px;transition:background 0.15s"
     ondragover="event.preventDefault();this.style.background='#eef2ff'"
@@ -125,7 +125,7 @@
     <div style="color:#6366f1;font-weight:600">Drop napr_captured.json here</div>
     <div style="color:#94a3b8;font-size:0.8rem;margin-top:4px">or paste JSON below</div>
   </div>
-  <textarea id="bulk-input" style="height:140px" placeholder='Paste the contents of napr_captured.json here...'></textarea>
+  <textarea id="bulk-input" style="height:120px" placeholder='Paste the contents of napr_captured.json here...'></textarea>
   <div class="btn-row" style="margin-top:10px">
     <div style="display:flex;gap:8px;align-items:center">
       <label style="font-size:0.85rem;color:#475569;font-weight:500">Import as:</label>
@@ -134,10 +134,22 @@
         <option value="lines">Pipe Networks (line)</option>
       </select>
     </div>
-    <button class="btn-add" onclick="importBulk()">⚡ Import All</button>
+    <button class="btn-add" id="bulk-btn" onclick="importBulk()">⚡ Import All</button>
     <button class="btn-clear" onclick="document.getElementById('bulk-input').value=''">Clear</button>
   </div>
   <div id="bulk-msg"></div>
+
+  <!-- Progress -->
+  <div id="bulk-progress" style="display:none;margin-top:14px">
+    <div style="display:flex;justify-content:space-between;font-size:0.82rem;color:#475569;margin-bottom:4px">
+      <span id="bulk-progress-label">Parsing...</span>
+      <span id="bulk-progress-pct">0%</span>
+    </div>
+    <div style="background:#e2e8f0;border-radius:99px;height:10px;overflow:hidden">
+      <div id="bulk-progress-bar" style="height:100%;width:0%;background:#6366f1;border-radius:99px;transition:width 0.3s"></div>
+    </div>
+    <div style="font-size:0.78rem;color:#94a3b8;margin-top:6px" id="bulk-progress-sub"></div>
+  </div>
 </div>
 </div>
 <div id="tab-lines" class="tab-content">
